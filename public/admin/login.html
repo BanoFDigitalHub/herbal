@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VitalCare Admin · Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500&family=Figtree:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Figtree',sans-serif;background:#faf9f7;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;color:#1a1a1a;}
+  .login-card{background:#fff;border:1px solid #ece9e4;width:100%;max-width:400px;padding:40px 32px;border-radius:4px;box-shadow:0 4px 24px rgba(0,0,0,.04);}
+  .brand{text-align:center;margin-bottom:32px;}
+  .brand h1{font-family:'Cormorant Garamond',serif;font-size:1.8rem;letter-spacing:5px;font-weight:400;}
+  .brand p{font-size:10px;letter-spacing:2px;color:#999;text-transform:uppercase;margin-top:6px;}
+  .form-group{margin-bottom:18px;}
+  .form-group label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#666;margin-bottom:7px;}
+  .form-group input{width:100%;padding:11px 14px;border:1px solid #e5e2dd;background:#faf9f7;font-family:inherit;font-size:14px;outline:none;border-radius:3px;transition:.15s;}
+  .form-group input:focus{border-color:#1a1a1a;background:#fff;}
+  .submit-btn{width:100%;padding:13px;background:#1a1a1a;color:#fff;border:none;font-size:11px;text-transform:uppercase;letter-spacing:2px;cursor:pointer;font-family:inherit;font-weight:500;transition:.2s;border-radius:3px;}
+  .submit-btn:hover{background:#000;}
+  .submit-btn:disabled{opacity:.6;cursor:not-allowed;}
+  .error{background:#fff1f1;border:1px solid #f5c5c5;color:#9a3030;padding:10px 12px;font-size:12px;margin-bottom:16px;border-radius:3px;display:none;}
+  .error.show{display:block;}
+  .footer-note{text-align:center;font-size:11px;color:#aaa;margin-top:20px;}
+</style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="brand">
+      <h1>VITALCARE</h1>
+      <p>Admin Panel</p>
+    </div>
+    <div class="error" id="error"></div>
+    <form id="loginForm" autocomplete="off">
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="email" placeholder="admin@vitalcare.pk" required autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="password" placeholder="••••••••" required autocomplete="new-password">
+      </div>
+      <button type="submit" class="submit-btn" id="submitBtn">Sign In</button>
+    </form>
+    <div class="footer-note">Authorized personnel only</div>
+  </div>
+
+<script>
+  // already logged in?
+  if (localStorage.getItem('vc_admin_token')) {
+    fetch('/api/auth/verify', { headers: { Authorization: 'Bearer ' + localStorage.getItem('vc_admin_token') } })
+      .then(r => r.json())
+      .then(d => { if (d.success) location.href = '/admin/'; });
+  }
+
+  const form = document.getElementById('loginForm');
+  const errBox = document.getElementById('error');
+  const btn = document.getElementById('submitBtn');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errBox.classList.remove('show');
+    btn.disabled = true;
+    btn.textContent = 'Signing in...';
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('email').value.trim(),
+          password: document.getElementById('password').value
+        })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        localStorage.setItem('vc_admin_token', data.token);
+        localStorage.setItem('vc_admin_email', data.admin.email);
+        location.href = '/admin/';
+      } else {
+        errBox.textContent = data.message || 'Login failed';
+        errBox.classList.add('show');
+      }
+    } catch (err) {
+      errBox.textContent = 'Network error. Try again.';
+      errBox.classList.add('show');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+    }
+  });
+</script>
+</body>
+</html>
