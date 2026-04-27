@@ -1,7 +1,7 @@
 {
-  "name": "vitalcare-backend",
+  "name": "Herbal Power-backend",
   "version": "1.0.0",
-  "description": "VitalCare full-stack backend with admin panel",
+  "description": "Herbal Power full-stack backend with admin panel",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
