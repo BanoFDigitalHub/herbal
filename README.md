@@ -1,4 +1,4 @@
-# VitalCare — Pure Wellness E-commerce
+# Herbal Power — Pure Wellness E-commerce
 
 Full-stack men's wellness e-commerce platform built for the Pakistani market. Built with Node.js, Express, MongoDB, and vanilla JS.
 
@@ -43,10 +43,10 @@ The `.env` file is already configured with your MongoDB Atlas connection. Update
 ```
 MONGO_URI=mongodb+srv://...
 JWT_SECRET=...
-ADMIN_EMAIL=admin@vitalcare.pk
+ADMIN_EMAIL=admin@Herbal Power.pk
 ADMIN_PASSWORD=Admin@12345
 WHATSAPP_NUMBER=923001234567
-DOMAIN=https://vitalcare.pk
+DOMAIN=https://Herbal Power.pk
 PORT=5000
 ```
 
@@ -60,13 +60,13 @@ Server starts on `http://localhost:5000`. Default categories are seeded automati
 ### 4. Access
 - **Customer site**: `http://localhost:5000/`
 - **Admin panel**: `http://localhost:5000/admin/login.html`
-  - Email: `admin@vitalcare.pk`
+  - Email: `admin@Herbal Power.pk`
   - Password: `Admin@12345`
 
 ## Project Structure
 
 ```
-vitalcare-backend/
+Herbal Power-backend/
 ├── server.js                  # Express app entry
 ├── package.json
 ├── .env                       # Credentials (NOT committed)

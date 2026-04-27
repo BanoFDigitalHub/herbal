@@ -1,5 +1,5 @@
 // =========================================================
-// VitalCare Admin Panel - Main App
+// Herbal Power Admin Panel - Main App
 // =========================================================
 
 const TOKEN = localStorage.getItem('vc_admin_token');

@@ -1,4 +1,4 @@
-/* VitalCare Frontend Logic */
+/* Herbal Power Frontend Logic */
 (function(){
   'use strict';
 
@@ -120,7 +120,7 @@
       <div class="product-card" data-id="${p._id}">
         <div class="card-img-wrapper" data-action="view" data-id="${p._id}">
           ${tag ? `<span class="sale-tag">${escapeHtml(tag)}</span>` : ''}
-          <img src="${escapeHtml(p.mainImage || '')}" alt="${escapeHtml(p.name)}" loading="lazy" onerror="this.src='https://via.placeholder.com/400x400/f7f5f2/999?text=VitalCare'">
+          <img src="${escapeHtml(p.mainImage || '')}" alt="${escapeHtml(p.name)}" loading="lazy" onerror="this.src='https://via.placeholder.com/400x400/f7f5f2/999?text=Herbal Power'">
           <button class="cart-circle" data-action="add" data-id="${p._id}" aria-label="Add to cart">
             <svg viewBox="0 0 24 24"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
           </button>
@@ -157,7 +157,7 @@
       <div class="featured-wrap">
         <div class="featured-card">
           <div class="featured-img" data-action="view" data-id="${p._id}">
-            <img src="${escapeHtml(p.mainImage || '')}" alt="${escapeHtml(p.name)}" onerror="this.src='https://via.placeholder.com/600x600/f7f5f2/999?text=VitalCare'">
+            <img src="${escapeHtml(p.mainImage || '')}" alt="${escapeHtml(p.name)}" onerror="this.src='https://via.placeholder.com/600x600/f7f5f2/999?text=Herbal Power'">
             ${p.saleTag ? `<span class="featured-tag">${escapeHtml(p.saleTag)}</span>` : ''}
           </div>
           <div class="featured-content">
@@ -382,7 +382,7 @@
         </button>
         <div class="pm-grid">
           <div class="pm-images">
-            <img class="pm-main-img" src="${escapeHtml(p.mainImage||'')}" alt="${escapeHtml(p.name)}" onerror="this.src='https://via.placeholder.com/600x600/f7f5f2/999?text=VitalCare'">
+            <img class="pm-main-img" src="${escapeHtml(p.mainImage||'')}" alt="${escapeHtml(p.name)}" onerror="this.src='https://via.placeholder.com/600x600/f7f5f2/999?text=Herbal Power'">
             ${(p.gallery && p.gallery.length) ? `
               <div class="pm-thumbs">
                 ${[p.mainImage, ...p.gallery].map((g,i) => `<img src="${escapeHtml(g)}" data-thumb="${i}" class="${i===0?'active':''}" onerror="this.style.display='none'">`).join('')}
