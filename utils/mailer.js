@@ -287,28 +287,7 @@ const shell = (bodyContent) => `
 </body>
 </html>`;
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  CORE sendMail  — route calls: sendMail(email, subject, html)
-// ══════════════════════════════════════════════════════════════════════════════
-const sendMail = async (to, subject, html) => {
-  const attachments = [];
-  if (fs.existsSync(logoPath)) {
-    attachments.push({ filename: 'logo.png', path: logoPath, cid: 'herbalpower-logo' });
-  } else {
-    console.warn('⚠️  logo.png not found at root — sending without logo');
-  }
-
-  await transporter.sendMail({
-    from: `"Herbal Power" <${process.env.GMAIL_USER}>`,
-    to,
-    subject,
-    html,
-    attachments,
-  });
-
-  console.log(`✅ Email → ${to} | ${subject}`);
-};
-
+// ══════════════════
 // ══════════════════════════════════════════════════════════════════════════════
 //  TEMPLATES  — route calls: templates[status](order)
 // ══════════════════════════════════════════════════════════════════════════════
