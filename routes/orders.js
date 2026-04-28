@@ -3,7 +3,7 @@ const router = express.Router();
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const auth = require('../middleware/auth');
-const { sendOrderEmail } = require('../utils/mailer');  // ✅ SIRF YEH IMPORT
+const { sendOrderEmail } = require('../utils/sendEmail');  // ✅ SIRF YEH IMPORT
 
 // ─── Helper: Send order email safely (using new mailer) ───────────────────────
 const sendOrderEmailSafe = async (order, status) => {
