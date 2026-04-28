@@ -3,27 +3,27 @@ const router = express.Router();
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const auth = require('../middleware/auth');
-const { sendOrderReceivedEmail, sendStatusUpdateEmail } = require('../utils/mailer');
+const { sendMail, templates, subjects } = require('../utils/mailer');
 
 // ─── Helper: Send order email safely ─────────────────────────────────────────
 const sendOrderEmail = async (order, status) => {
   try {
-    const email = order?.email || order?.customer?.email;
-
-    if (!email || email.trim() === '') {
+    if (!order.email || order.email.trim() === '') {
       console.warn(`⚠️ No email for order ${order.orderNumber} — skipping`);
       return;
     }
 
-    if (status === 'pending' || status === 'received') {
-      // Naya order place hua — received email bhejo
-      await sendOrderReceivedEmail(order);
-    } else {
-      // Admin ne status change kiya — status update email bhejo
-      await sendStatusUpdateEmail({ ...order.toObject ? order.toObject() : order, status });
+    const buildTemplate = templates[status];
+    if (!buildTemplate) {
+      console.warn(`⚠️ No template for status: ${status}`);
+      return;
     }
 
-    console.log(`✅ Email sent [${status}] to ${email} — Order ${order.orderNumber}`);
+    const html    = buildTemplate(order);
+    const subject = subjects[status](order.orderNumber);
+
+    await sendMail(order.email, subject, html);
+    console.log(`✅ Email sent [${status}] to ${order.email} — Order ${order.orderNumber}`);
   } catch (err) {
     console.error(`❌ Email failed [${status}] for order ${order.orderNumber}:`, err.message);
   }
@@ -99,10 +99,10 @@ router.post('/', async (req, res) => {
     await order.save();
     console.log('✅ Order saved:', order.orderNumber);
 
-    // ── Email: order received ──────────────────────────────────────────────
+    // Send email — 'pending' status pe orderReceived template jaayega
     await sendOrderEmail(order, 'pending');
 
-    // ── WhatsApp Link ──────────────────────────────────────────────────────
+    // Build WhatsApp link
     const waNumber = process.env.WHATSAPP_NUMBER || '923001234567';
     let msg = `🌿 *New Order - ${order.orderNumber}*\n\n`;
     msg += `👤 *Name:* ${customerName}\n📱 *Phone:* ${phone}\n📍 *Address:* ${address}, ${city}\n\n`;
@@ -139,54 +139,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: single order
-// ─────────────────────────────────────────────────────────────────────────────
-router.get('/:id', auth, async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
-    if (!order) return res.status(404).json({ success: false, message: 'Not found' });
-    res.json({ success: true, order });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: update status  ← email yahan se bhi jaata hai
-// ─────────────────────────────────────────────────────────────────────────────
-router.patch('/:id/status', auth, async (req, res) => {
-  try {
-    const { status } = req.body;
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true }
-    );
-    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
-
-    // ── Email: status change ───────────────────────────────────────────────
-    await sendOrderEmail(order, status);
-
-    res.json({ success: true, order });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: delete
-// ─────────────────────────────────────────────────────────────────────────────
-router.delete('/:id', auth, async (req, res) => {
-  try {
-    await Order.findByIdAndDelete(req.params.id);
-    res.json({ success: true });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: stats
+// ADMIN: stats  ← /:id se PEHLE hona zaroori hai warna crash karta hai
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/stats/overview', auth, async (req, res) => {
   try {
@@ -222,6 +175,51 @@ router.get('/stats/overview', auth, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN: single order
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: 'Not found' });
+    res.json({ success: true, order });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN: update status
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/:id/status', auth, async (req, res) => {
+  try {
+    const { status } = req.body;
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+
+    await sendOrderEmail(order, status);
+    res.json({ success: true, order });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN: delete
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    await Order.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
   }
 });
 
