@@ -4,19 +4,21 @@ const fs = require('fs');
 
 // ─── Transporter ───────────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
+   host: "smtp.gmail.com",
   port: 587,
-  secure: false, // TLS start (STARTTLS)
+  secure: true, // SSL
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
   },
+  family: 4,
   tls: {
     rejectUnauthorized: false
   },
-  connectionTimeout: 15000,
+  connectionTimeout: 20000,
   socketTimeout: 20000,
 });
+
 
 // ─── Logo ──────────────────────────────────────────────────────────────────────
 const logoPath = path.join(__dirname, '..', 'logo.png');
