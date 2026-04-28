@@ -3,29 +3,29 @@ const router = express.Router();
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const auth = require('../middleware/auth');
-const { sendOrderEmail } = require('../utils/sendEmail');  // ✅ SIRF YEH IMPORT
+const { sendOrderReceivedEmail, sendStatusUpdateEmail } = require('../utils/mailer');
 
-// ─── Helper: Send order email safely (using new mailer) ───────────────────────
-const sendOrderEmailSafe = async (order, status) => {
+// ─── Helper: Send order email safely ─────────────────────────────────────────
+const sendOrderEmail = async (order, status) => {
   try {
-    if (!order.email || order.email.trim() === '') {
+    const email = order?.email || order?.customer?.email;
+
+    if (!email || email.trim() === '') {
       console.warn(`⚠️ No email for order ${order.orderNumber} — skipping`);
-      return false;
+      return;
     }
 
-    // Using the new sendOrderEmail function from mailer.js
-    const result = await sendOrderEmail(order, status);
-    
-    if (result) {
-      console.log(`✅ Email sent [${status}] to ${order.email} — Order ${order.orderNumber}`);
+    if (status === 'pending' || status === 'received') {
+      // Naya order place hua — received email bhejo
+      await sendOrderReceivedEmail(order);
     } else {
-      console.warn(`⚠️ Email failed [${status}] for order ${order.orderNumber}`);
+      // Admin ne status change kiya — status update email bhejo
+      await sendStatusUpdateEmail({ ...order.toObject ? order.toObject() : order, status });
     }
-    
-    return result;
+
+    console.log(`✅ Email sent [${status}] to ${email} — Order ${order.orderNumber}`);
   } catch (err) {
-    console.error(`❌ Email error [${status}] for order ${order.orderNumber}:`, err.message);
-    return false;
+    console.error(`❌ Email failed [${status}] for order ${order.orderNumber}:`, err.message);
   }
 };
 
@@ -92,28 +92,19 @@ router.post('/', async (req, res) => {
     const total = subtotal + fee;
 
     const order = new Order({
-      customerName, 
-      phone, 
-      email, 
-      address, 
-      city, 
-      notes,
+      customerName, phone, email, address, city, notes,
       items: builtItems,
-      subtotal, 
-      deliveryFee: fee, 
-      total,
-      status: 'pending'  // Default status
+      subtotal, deliveryFee: fee, total,
     });
-    
     await order.save();
     console.log('✅ Order saved:', order.orderNumber);
 
-    // Send email using new mailer (status: 'pending' or 'received')
-    await sendOrderEmailSafe(order, 'received');
+    // ── Email: order received ──────────────────────────────────────────────
+    await sendOrderEmail(order, 'pending');
 
-    // Build WhatsApp link
+    // ── WhatsApp Link ──────────────────────────────────────────────────────
     const waNumber = process.env.WHATSAPP_NUMBER || '923001234567';
-    let msg = `🛒 *New Order - ${order.orderNumber}*\n\n`;
+    let msg = `🌿 *New Order - ${order.orderNumber}*\n\n`;
     msg += `👤 *Name:* ${customerName}\n📱 *Phone:* ${phone}\n📍 *Address:* ${address}, ${city}\n\n`;
     msg += `*Items:*\n`;
     builtItems.forEach((i, idx) => {
@@ -161,68 +152,47 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: update status (Sends email based on new status)
+// ADMIN: update status  ← email yahan se bhi jaata hai
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/status', auth, async (req, res) => {
   try {
     const { status } = req.body;
-    
-    // Valid statuses
-    const validStatuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({ success: false, message: 'Invalid status' });
-    }
-    
     const order = await Order.findByIdAndUpdate(
       req.params.id,
       { status },
       { new: true }
     );
-    
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
+    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
 
-    // Send email based on new status
-    // Map 'pending' to 'received' for email template
-    const emailStatus = status === 'pending' ? 'received' : status;
-    await sendOrderEmailSafe(order, emailStatus);
-    
+    // ── Email: status change ───────────────────────────────────────────────
+    await sendOrderEmail(order, status);
+
     res.json({ success: true, order });
   } catch (err) {
-    console.error('❌ Status update error:', err);
     res.status(400).json({ success: false, message: err.message });
   }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: delete order
+// ADMIN: delete
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete('/:id', auth, async (req, res) => {
   try {
-    const order = await Order.findByIdAndDelete(req.params.id);
-    if (!order) {
-      return res.status(404).json({ success: false, message: 'Order not found' });
-    }
-    res.json({ success: true, message: 'Order deleted successfully' });
+    await Order.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
   } catch (err) {
-    console.error('❌ Delete error:', err);
     res.status(400).json({ success: false, message: err.message });
   }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: stats dashboard
+// ADMIN: stats
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/stats/overview', auth, async (req, res) => {
   try {
     const totalOrders     = await Order.countDocuments();
     const pendingOrders   = await Order.countDocuments({ status: 'pending' });
-    const confirmedOrders = await Order.countDocuments({ status: 'confirmed' });
-    const processingOrders = await Order.countDocuments({ status: 'processing' });
-    const shippedOrders   = await Order.countDocuments({ status: 'shipped' });
     const deliveredOrders = await Order.countDocuments({ status: 'delivered' });
-    const cancelledOrders = await Order.countDocuments({ status: 'cancelled' });
 
     const revenueAgg = await Order.aggregate([
       { $match: { status: { $in: ['confirmed', 'processing', 'shipped', 'delivered'] } } },
@@ -248,22 +218,9 @@ router.get('/stats/overview', auth, async (req, res) => {
 
     res.json({
       success: true,
-      stats: { 
-        totalOrders, 
-        pendingOrders, 
-        confirmedOrders,
-        processingOrders,
-        shippedOrders,
-        deliveredOrders, 
-        cancelledOrders,
-        totalRevenue, 
-        totalProducts, 
-        lowStock, 
-        recent 
-      }
+      stats: { totalOrders, pendingOrders, deliveredOrders, totalRevenue, totalProducts, lowStock, recent }
     });
   } catch (err) {
-    console.error('❌ Stats error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
