@@ -1,7 +1,7 @@
 const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
-const nodemailer = require('nodemailer');
+
 require('dns').setDefaultResultOrder('ipv4first'); // ⭐ IMPORTANT for Render
 
 const transporter = nodemailer.createTransport({
