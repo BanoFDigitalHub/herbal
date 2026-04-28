@@ -2,41 +2,95 @@ const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
 
-require('dns').setDefaultResultOrder('ipv4first'); // ⭐ IMPORTANT for Render
+// ⭐ IMPORTANT FIX: Render + Gmail IPv6 issue solve
+require('dns').setDefaultResultOrder('ipv4first');
 
+// ─────────────────────────────────────────────
+// TRANSPORTER (STABLE GMAIL CONFIG)
+// ─────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
   port: 465,
   secure: true,
+
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
   },
-  pool: true, // ⭐ reuse connections (VERY IMPORTANT)
-  maxConnections: 5,
-  maxMessages: 100,
-  rateDelta: 20000,
-  rateLimit: 5,
-  connectionTimeout: 15000,
-  socketTimeout: 20000,
+
+  pool: true,
+  maxConnections: 3,
+  maxMessages: 50,
+
+  connectionTimeout: 30000,
+  socketTimeout: 30000,
+
   tls: {
     rejectUnauthorized: false,
   },
 });
 
-// ─── Logo ──────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// LOGO
+// ─────────────────────────────────────────────
 const logoPath = path.join(__dirname, '..', 'logo.png');
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────
 const fmt = (p) => `PKR ${Number(p || 0).toLocaleString()}`;
 
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
   });
 
 const ordNo = (order) =>
-  order.orderNumber || String(order._id).toUpperCase().slice(-8);
+  order.orderNumber || String(order._id).slice(-8).toUpperCase();
+
+// ─────────────────────────────────────────────
+// EMAIL CORE SENDER (WITH RETRY)
+// ─────────────────────────────────────────────
+const sendMail = async (to, subject, html, retry = 2) => {
+  try {
+    const attachments = [];
+
+    if (fs.existsSync(logoPath)) {
+      attachments.push({
+        filename: 'logo.png',
+        path: logoPath,
+        cid: 'logo',
+      });
+    }
+
+    const mailOptions = {
+      from: `"Herbal Power" <${process.env.GMAIL_USER}>`,
+      to,
+      subject,
+      html,
+      attachments,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+
+    console.log(`Email sent → ${to} | ${subject}`);
+    return info;
+
+  } catch (err) {
+    console.log(`Email failed → ${to} | ${err.message}`);
+
+    // retry once (important for Render)
+    if (retry > 0) {
+      console.log("Retrying email...");
+      await new Promise(r => setTimeout(r, 3000));
+      return sendMail(to, subject, html, retry - 1);
+    }
+
+    throw err;
+  }
+};
 
 // ─── Items Table ───────────────────────────────────────────────────────────────
 const itemsHTML = (items = []) =>
