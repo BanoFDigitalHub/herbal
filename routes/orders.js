@@ -5,28 +5,26 @@ const Product = require('../models/Product');
 const auth = require('../middleware/auth');
 const { sendMail, templates, subjects } = require('../utils/mailer');
 
-// ─── Helper: Send order email safely ─────────────────────────────────────────
-const sendOrderEmail = async (order, status) => {
-  try {
-    if (!order.email || order.email.trim() === '') {
-      console.warn(`⚠️ No email for order ${order.orderNumber} — skipping`);
-      return;
-    }
-
-    const buildTemplate = templates[status];
-    if (!buildTemplate) {
-      console.warn(`⚠️ No template for status: ${status}`);
-      return;
-    }
-
-    const html    = buildTemplate(order);
-    const subject = subjects[status](order.orderNumber);
-
-    await sendMail(order.email, subject, html);
-    console.log(`✅ Email sent [${status}] to ${order.email} — Order ${order.orderNumber}`);
-  } catch (err) {
-    console.error(`❌ Email failed [${status}] for order ${order.orderNumber}:`, err.message);
+// ─── Helper: Send order email safely (fire & forget — await mat karo)
+const sendOrderEmail = (order, status) => {
+  if (!order.email || order.email.trim() === '') {
+    console.warn(`⚠️ No email for order ${order.orderNumber} — skipping`);
+    return;
   }
+
+  const buildTemplate = templates[status];
+  if (!buildTemplate) {
+    console.warn(`⚠️ No template for status: ${status}`);
+    return;
+  }
+
+  const html    = buildTemplate(order);
+  const subject = subjects[status](order.orderNumber);
+
+  // await nahi — background mein chalega, order response block nahi hoga
+  sendMail(order.email, subject, html)
+    .then(() => console.log(`✅ Email sent [${status}] to ${order.email} — Order ${order.orderNumber}`))
+    .catch(err => console.error(`❌ Email failed [${status}] for order ${order.orderNumber}:`, err.message));
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,7 +40,6 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
 
-    // Build server-side items
     const builtItems = [];
     let subtotal = 0;
 
@@ -99,10 +96,10 @@ router.post('/', async (req, res) => {
     await order.save();
     console.log('✅ Order saved:', order.orderNumber);
 
-    // Send email — 'pending' status pe orderReceived template jaayega
-    await sendOrderEmail(order, 'pending');
+    // ── Email: background mein — res.json block nahi hoga ─────────────────
+    sendOrderEmail(order, 'pending');
 
-    // Build WhatsApp link
+    // ── WhatsApp Link ──────────────────────────────────────────────────────
     const waNumber = process.env.WHATSAPP_NUMBER || '923001234567';
     let msg = `🌿 *New Order - ${order.orderNumber}*\n\n`;
     msg += `👤 *Name:* ${customerName}\n📱 *Phone:* ${phone}\n📍 *Address:* ${address}, ${city}\n\n`;
@@ -115,6 +112,7 @@ router.post('/', async (req, res) => {
 
     const whatsappLink = `https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`;
 
+    // ── Instant response — email ka wait nahi ─────────────────────────────
     res.json({ success: true, order, whatsappLink });
 
   } catch (err) {
@@ -139,7 +137,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: stats  ← /:id se PEHLE hona zaroori hai warna crash karta hai
+// ADMIN: stats  ← /:id se PEHLE hona zaroori hai
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/stats/overview', auth, async (req, res) => {
   try {
@@ -192,7 +190,7 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: update status
+// ADMIN: update status  ← yahan bhi fire & forget
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/status', auth, async (req, res) => {
   try {
@@ -204,7 +202,7 @@ router.patch('/:id/status', auth, async (req, res) => {
     );
     if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
 
-    await sendOrderEmail(order, status);
+    sendOrderEmail(order, status); // background mein
     res.json({ success: true, order });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
