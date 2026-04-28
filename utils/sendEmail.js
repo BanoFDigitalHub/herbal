@@ -336,12 +336,12 @@ const orderCancelledEmail = (order) => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 const sendOrderEmail = async (order, status) => {
-  if (!order?.customerEmail && !order?.customer?.email) {
+  if (!order?.email && !order?.customerEmail && !order?.customer?.email) {
     console.error('❌ No customer email found');
     return false;
   }
   
-  const to = order.customerEmail || order.customer?.email;
+  const to = order.email || order.customerEmail || order.customer?.email;
   
   let html, subject;
   const orderNum = getOrderNumber(order);
