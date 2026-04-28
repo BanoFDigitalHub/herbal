@@ -1,24 +1,28 @@
 const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
+const nodemailer = require('nodemailer');
+require('dns').setDefaultResultOrder('ipv4first'); // ⭐ IMPORTANT for Render
 
-// ─── Transporter ───────────────────────────────────────────────────────────────
 const transporter = nodemailer.createTransport({
-   host: "smtp.gmail.com",
-  port: 587,
-  secure: true, // SSL
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
   },
-  family: 4,
-  tls: {
-    rejectUnauthorized: false
-  },
-  connectionTimeout: 20000,
+  pool: true, // ⭐ reuse connections (VERY IMPORTANT)
+  maxConnections: 5,
+  maxMessages: 100,
+  rateDelta: 20000,
+  rateLimit: 5,
+  connectionTimeout: 15000,
   socketTimeout: 20000,
+  tls: {
+    rejectUnauthorized: false,
+  },
 });
-
 
 // ─── Logo ──────────────────────────────────────────────────────────────────────
 const logoPath = path.join(__dirname, '..', 'logo.png');
