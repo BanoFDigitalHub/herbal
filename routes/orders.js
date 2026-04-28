@@ -3,39 +3,29 @@ const router = express.Router();
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const auth = require('../middleware/auth');
-const { sendMail } = require('../utils/mailer');
-const { templates, subjects } = require('../utils/emailTemplates');
+const { sendOrderEmail } = require('../utils/mailer');  // ✅ SIRF YEH IMPORT
 
-// ─── Helper: Send order email safely ─────────────────────────────────────────
-const sendOrderEmail = async (order, status) => {
+// ─── Helper: Send order email safely (using new mailer) ───────────────────────
+const sendOrderEmailSafe = async (order, status) => {
   try {
     if (!order.email || order.email.trim() === '') {
       console.warn(`⚠️ No email for order ${order.orderNumber} — skipping`);
-      return;
+      return false;
     }
 
-    const templateMap = {
-      pending:    templates.orderReceived,
-      confirmed:  templates.orderConfirmed,
-      processing: templates.orderProcessing,
-      shipped:    templates.orderShipped,
-      delivered:  templates.orderDelivered,
-      cancelled:  templates.orderCancelled,
-    };
-
-    const buildTemplate = templateMap[status];
-    if (!buildTemplate) {
-      console.warn(`⚠️ No template for status: ${status}`);
-      return;
+    // Using the new sendOrderEmail function from mailer.js
+    const result = await sendOrderEmail(order, status);
+    
+    if (result) {
+      console.log(`✅ Email sent [${status}] to ${order.email} — Order ${order.orderNumber}`);
+    } else {
+      console.warn(`⚠️ Email failed [${status}] for order ${order.orderNumber}`);
     }
-
-    const html    = buildTemplate(order);
-    const subject = subjects[status](order.orderNumber);
-
-    await sendMail(order.email, subject, html);
-    console.log(`✅ Email sent [${status}] to ${order.email} — Order ${order.orderNumber}`);
+    
+    return result;
   } catch (err) {
-    console.error(`❌ Email failed [${status}] for order ${order.orderNumber}:`, err.message);
+    console.error(`❌ Email error [${status}] for order ${order.orderNumber}:`, err.message);
+    return false;
   }
 };
 
@@ -102,15 +92,24 @@ router.post('/', async (req, res) => {
     const total = subtotal + fee;
 
     const order = new Order({
-      customerName, phone, email, address, city, notes,
+      customerName, 
+      phone, 
+      email, 
+      address, 
+      city, 
+      notes,
       items: builtItems,
-      subtotal, deliveryFee: fee, total,
+      subtotal, 
+      deliveryFee: fee, 
+      total,
+      status: 'pending'  // Default status
     });
+    
     await order.save();
     console.log('✅ Order saved:', order.orderNumber);
 
-    // Send email
-    await sendOrderEmail(order, 'pending');
+    // Send email using new mailer (status: 'pending' or 'received')
+    await sendOrderEmailSafe(order, 'received');
 
     // Build WhatsApp link
     const waNumber = process.env.WHATSAPP_NUMBER || '923001234567';
@@ -162,45 +161,68 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: update status
+// ADMIN: update status (Sends email based on new status)
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/status', auth, async (req, res) => {
   try {
     const { status } = req.body;
+    
+    // Valid statuses
+    const validStatuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status' });
+    }
+    
     const order = await Order.findByIdAndUpdate(
       req.params.id,
       { status },
       { new: true }
     );
-    if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+    
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
 
-    await sendOrderEmail(order, status);
+    // Send email based on new status
+    // Map 'pending' to 'received' for email template
+    const emailStatus = status === 'pending' ? 'received' : status;
+    await sendOrderEmailSafe(order, emailStatus);
+    
     res.json({ success: true, order });
   } catch (err) {
+    console.error('❌ Status update error:', err);
     res.status(400).json({ success: false, message: err.message });
   }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: delete
+// ADMIN: delete order
 // ─────────────────────────────────────────────────────────────────────────────
 router.delete('/:id', auth, async (req, res) => {
   try {
-    await Order.findByIdAndDelete(req.params.id);
-    res.json({ success: true });
+    const order = await Order.findByIdAndDelete(req.params.id);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+    res.json({ success: true, message: 'Order deleted successfully' });
   } catch (err) {
+    console.error('❌ Delete error:', err);
     res.status(400).json({ success: false, message: err.message });
   }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: stats
+// ADMIN: stats dashboard
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/stats/overview', auth, async (req, res) => {
   try {
     const totalOrders     = await Order.countDocuments();
     const pendingOrders   = await Order.countDocuments({ status: 'pending' });
+    const confirmedOrders = await Order.countDocuments({ status: 'confirmed' });
+    const processingOrders = await Order.countDocuments({ status: 'processing' });
+    const shippedOrders   = await Order.countDocuments({ status: 'shipped' });
     const deliveredOrders = await Order.countDocuments({ status: 'delivered' });
+    const cancelledOrders = await Order.countDocuments({ status: 'cancelled' });
 
     const revenueAgg = await Order.aggregate([
       { $match: { status: { $in: ['confirmed', 'processing', 'shipped', 'delivered'] } } },
@@ -226,9 +248,22 @@ router.get('/stats/overview', auth, async (req, res) => {
 
     res.json({
       success: true,
-      stats: { totalOrders, pendingOrders, deliveredOrders, totalRevenue, totalProducts, lowStock, recent }
+      stats: { 
+        totalOrders, 
+        pendingOrders, 
+        confirmedOrders,
+        processingOrders,
+        shippedOrders,
+        deliveredOrders, 
+        cancelledOrders,
+        totalRevenue, 
+        totalProducts, 
+        lowStock, 
+        recent 
+      }
     });
   } catch (err) {
+    console.error('❌ Stats error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
