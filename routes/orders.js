@@ -5,7 +5,10 @@ const Product = require('../models/Product');
 const auth = require('../middleware/auth');
 const { sendMail, templates, subjects } = require('../utils/mailer');
 
-// ─── Helper: Send order email safely (fire & forget — await mat karo)
+// ─────────────────────────────────────────────────────────────────────────────
+// ⭐ FIXED: sendOrderEmail — setImmediate + proper error logging
+// Fire & forget — order response block nahi hoga
+// ─────────────────────────────────────────────────────────────────────────────
 const sendOrderEmail = (order, status) => {
   if (!order.email || order.email.trim() === '') {
     console.warn(`⚠️ No email for order ${order.orderNumber} — skipping`);
@@ -14,17 +17,24 @@ const sendOrderEmail = (order, status) => {
 
   const buildTemplate = templates[status];
   if (!buildTemplate) {
-    console.warn(`⚠️ No template for status: ${status}`);
+    console.warn(`⚠️ No email template for status: "${status}"`);
     return;
   }
 
-  const html    = buildTemplate(order);
-  const subject = subjects[status](order.orderNumber);
+  // setImmediate — current event loop tick khatam hone ke baad chalega
+  // res.json() se pehle nahi rukta
+  setImmediate(() => {
+    const html    = buildTemplate(order);
+    const subject = subjects[status](order.orderNumber || 'N/A');
 
-  // await nahi — background mein chalega, order response block nahi hoga
-  sendMail(order.email, subject, html)
-    .then(() => console.log(`✅ Email sent [${status}] to ${order.email} — Order ${order.orderNumber}`))
-    .catch(err => console.error(`❌ Email failed [${status}] for order ${order.orderNumber}:`, err.message));
+    sendMail(order.email, subject, html)
+      .then(() =>
+        console.log(`📧 Email sent [${status}] → ${order.email} | Order ${order.orderNumber}`)
+      )
+      .catch(err =>
+        console.error(`📧 Email FAILED [${status}] → ${order.email} | Order ${order.orderNumber} | ${err.message}`)
+      );
+  });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,10 +106,10 @@ router.post('/', async (req, res) => {
     await order.save();
     console.log('✅ Order saved:', order.orderNumber);
 
-    // ── Email: background mein — res.json block nahi hoga ─────────────────
+    // ✅ Background mein email — res.json block nahi hoga
     sendOrderEmail(order, 'pending');
 
-    // ── WhatsApp Link ──────────────────────────────────────────────────────
+    // ─── WhatsApp Link ─────────────────────────────────────────────────────
     const waNumber = process.env.WHATSAPP_NUMBER || '923001234567';
     let msg = `🌿 *New Order - ${order.orderNumber}*\n\n`;
     msg += `👤 *Name:* ${customerName}\n📱 *Phone:* ${phone}\n📍 *Address:* ${address}, ${city}\n\n`;
@@ -112,7 +122,7 @@ router.post('/', async (req, res) => {
 
     const whatsappLink = `https://wa.me/${waNumber}?text=${encodeURIComponent(msg)}`;
 
-    // ── Instant response — email ka wait nahi ─────────────────────────────
+    // ✅ Instant response — email ka wait nahi
     res.json({ success: true, order, whatsappLink });
 
   } catch (err) {
@@ -190,7 +200,7 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADMIN: update status  ← yahan bhi fire & forget
+// ADMIN: update status
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/:id/status', auth, async (req, res) => {
   try {
@@ -202,7 +212,8 @@ router.patch('/:id/status', auth, async (req, res) => {
     );
     if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
 
-    sendOrderEmail(order, status); // background mein
+    // ✅ Background mein email — response block nahi hoga
+    sendOrderEmail(order, status);
     res.json({ success: true, order });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });

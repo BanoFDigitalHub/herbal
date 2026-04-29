@@ -1,34 +1,10 @@
+// ⭐ CRITICAL FIX #1: Yeh LINE #1 honi chahiye — kisi bhi require() se PEHLE
+// Render pe Gmail IPv6 address resolve hota tha jo block hota tha
+require('dns').setDefaultResultOrder('ipv4first');
+
 const nodemailer = require('nodemailer');
 const path = require('path');
 const fs = require('fs');
-
-// ⭐ IMPORTANT FIX: Render + Gmail IPv6 issue solve
-require('dns').setDefaultResultOrder('ipv4first');
-
-// ─────────────────────────────────────────────
-// TRANSPORTER (STABLE GMAIL CONFIG)
-// ─────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-
-  pool: true,
-  maxConnections: 3,
-  maxMessages: 50,
-
-  connectionTimeout: 30000,
-  socketTimeout: 30000,
-
-  tls: {
-    rejectUnauthorized: false,
-  },
-});
 
 // ─────────────────────────────────────────────
 // LOGO
@@ -51,9 +27,46 @@ const ordNo = (order) =>
   order.orderNumber || String(order._id).slice(-8).toUpperCase();
 
 // ─────────────────────────────────────────────
-// EMAIL CORE SENDER (WITH RETRY)
+// ⭐ CRITICAL FIX #2: TRANSPORTER FACTORY
+// pool: true → pool: false
+// Har send pe NAYA TCP connection banta hai
+// Isse cached IPv6 address reuse NAHI hoga
 // ─────────────────────────────────────────────
-const sendMail = async (to, subject, html, retry = 2) => {
+const createTransporter = () =>
+  nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true,
+
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_APP_PASSWORD,
+    },
+
+    // ✅ pool: false — MUST — pool cached broken IPv6 connection reuse karta tha
+    pool: false,
+
+    // ✅ Timeouts kam karo — 30s wait bakwas tha, 3 retries = 90s block
+    connectionTimeout: 10000,  // 10 seconds
+    greetingTimeout:    8000,  // 8 seconds
+    socketTimeout:     10000,  // 10 seconds
+
+    tls: {
+      rejectUnauthorized: false,
+      // ✅ TLS level pe bhi IPv4 force karo
+      family: 4,
+    },
+  });
+
+// ─────────────────────────────────────────────
+// ⭐ CRITICAL FIX #3: EMAIL CORE SENDER
+// Har attempt pe naya transporter — no cached connections
+// Exponential backoff retry (2s → 4s → 8s)
+// ─────────────────────────────────────────────
+const sendMail = async (to, subject, html, attempt = 1) => {
+  // Har attempt pe NAYA transporter banao
+  const transporter = createTransporter();
+
   try {
     const attachments = [];
 
@@ -65,30 +78,35 @@ const sendMail = async (to, subject, html, retry = 2) => {
       });
     }
 
-    const mailOptions = {
+    const info = await transporter.sendMail({
       from: `"Herbal Power" <${process.env.GMAIL_USER}>`,
       to,
       subject,
       html,
       attachments,
-    };
+    });
 
-    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Email sent → ${to} | ${subject}`);
 
-    console.log(`Email sent → ${to} | ${subject}`);
+    // ✅ Transporter explicitly close karo — connection leak na ho
+    transporter.close();
     return info;
 
   } catch (err) {
-    console.log(`Email failed → ${to} | ${err.message}`);
+    // ✅ Error pe bhi close karo
+    try { transporter.close(); } catch (_) {}
 
-    // retry once (important for Render)
-    if (retry > 0) {
-      console.log("Retrying email...");
-      await new Promise(r => setTimeout(r, 3000));
-      return sendMail(to, subject, html, retry - 1);
+    console.error(`❌ Email attempt ${attempt}/3 failed → ${to} | ${err.message}`);
+
+    // ✅ Max 3 attempts, delay badhta hai: 2s → 4s → 8s
+    if (attempt < 3) {
+      const delay = attempt * 2000;
+      console.log(`🔄 Retrying in ${delay / 1000}s...`);
+      await new Promise(r => setTimeout(r, delay));
+      return sendMail(to, subject, html, attempt + 1);
     }
 
-    throw err;
+    throw new Error(`Email failed after 3 attempts: ${err.message}`);
   }
 };
 
@@ -253,7 +271,7 @@ const shell = (bodyContent) => `
         </tr>
         <tr>
           <td style="padding:40px 48px 28px;text-align:center;background:#ffffff;">
-            <img src="cid:herbalpower-logo" alt="Herbal Power"
+            <img src="cid:logo" alt="Herbal Power"
                  style="max-width:160px;height:auto;display:block;margin:0 auto 18px;"/>
             <div style="width:36px;height:1px;background:#3a8a52;margin:0 auto;"></div>
           </td>
@@ -287,7 +305,6 @@ const shell = (bodyContent) => `
 </body>
 </html>`;
 
-// ══════════════════
 // ══════════════════════════════════════════════════════════════════════════════
 //  TEMPLATES  — route calls: templates[status](order)
 // ══════════════════════════════════════════════════════════════════════════════
@@ -296,7 +313,7 @@ const templates = {
   pending: (order) => shell(`
     <tr>
       <td style="padding:0 48px 28px;text-align:center;">
-        <div style="font-size:36px;margin-bottom:12px;">🌿</div>
+        <div style="font-size:36px;margin-bottom:12px;"></div>
         <h1 style="margin:0 0 8px;font-family:Georgia,serif;font-size:24px;
                    font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">Order Received</h1>
         <p style="margin:0;font-size:13px;color:#6a9a72;letter-spacing:0.1em;text-transform:uppercase;">
@@ -325,7 +342,7 @@ const templates = {
   confirmed: (order) => shell(`
     <tr>
       <td style="padding:0 48px 28px;text-align:center;">
-        <div style="font-size:36px;margin-bottom:12px;">✅</div>
+        <div style="font-size:36px;margin-bottom:12px;"></div>
         <h1 style="margin:0 0 8px;font-family:Georgia,serif;font-size:24px;
                    font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">Order Confirmed</h1>
         <p style="margin:0;font-size:13px;color:#6a9a72;letter-spacing:0.1em;text-transform:uppercase;">
@@ -342,7 +359,7 @@ const templates = {
   processing: (order) => shell(`
     <tr>
       <td style="padding:0 48px 28px;text-align:center;">
-        <div style="font-size:36px;margin-bottom:12px;">⚙️</div>
+        <div style="font-size:36px;margin-bottom:12px;"></div>
         <h1 style="margin:0 0 8px;font-family:Georgia,serif;font-size:24px;
                    font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">Order Being Prepared</h1>
         <p style="margin:0;font-size:13px;color:#6a9a72;letter-spacing:0.1em;text-transform:uppercase;">
@@ -359,7 +376,7 @@ const templates = {
   shipped: (order) => shell(`
     <tr>
       <td style="padding:0 48px 28px;text-align:center;">
-        <div style="font-size:36px;margin-bottom:12px;">🚚</div>
+        <div style="font-size:36px;margin-bottom:12px;"></div>
         <h1 style="margin:0 0 8px;font-family:Georgia,serif;font-size:24px;
                    font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">Your Order Is On Its Way</h1>
         <p style="margin:0;font-size:13px;color:#6a9a72;letter-spacing:0.1em;text-transform:uppercase;">
