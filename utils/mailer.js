@@ -1,106 +1,29 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// mailer.js  —  Herbal Power
-// ROOT FIX: Custom DNS lookup jo SIRF IPv4 return karta hai
-// Render pe Node v24 mein dns.setDefaultResultOrder kaam nahi karta
-// Is liye nodemailer ka `lookup` option use karo — guaranteed IPv4 only
-// ─────────────────────────────────────────────────────────────────────────────
-
 const nodemailer = require('nodemailer');
-const dns        = require('dns');
-const path       = require('path');
-const fs         = require('fs');
+const path = require('path');
+const fs   = require('fs');
 
-// ─────────────────────────────────────────────
-// LOGO
-// ─────────────────────────────────────────────
+// ─── Logo ──────────────────────────────────────────────────────────────────────
 const logoPath = path.join(__dirname, '..', 'logo.png');
 
-// ─────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────
-const fmt = (p) => `PKR ${Number(p || 0).toLocaleString()}`;
+// ─── Transporter — Gmail App Password ─────────────────────────────────────────
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
+});
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+const fmt = (p) => `Rs. ${Number(p || 0).toLocaleString()}`;
 
 const fmtDate = (d) =>
   new Date(d).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+    year: 'numeric', month: 'long', day: 'numeric',
   });
 
 const ordNo = (order) =>
-  order.orderNumber || String(order._id).slice(-8).toUpperCase();
-
-// ─────────────────────────────────────────────
-// ⭐ ROOT FIX: IPv4-only DNS lookup
-//
-// Yeh function nodemailer TCP connection banane se
-// PEHLE call hota hai. dns.resolve4() se directly
-// IPv4 address return karte hain — IPv6 ka chance
-// hi nahi milta Render pe.
-// ─────────────────────────────────────────────// ─────────────────────────────────────────────
-// ⭐ ROOT FIX: IPv4-only DNS lookup
-// ─────────────────────────────────────────────
-function ipv4Lookup(hostname, _options, callback) {
-  dns.resolve4(hostname, (err, addresses) => {
-    if (err || !addresses || addresses.length === 0) {
-      return dns.lookup(hostname, { family: 4 }, callback);
-    }
-    callback(null, addresses[0], 4);
-  });
-}
-
-// ─────────────────────────────────────────────
-// TRANSPORTER — Port 587, family:4, IPv4 lookup
-// ─────────────────────────────────────────────
-const createTransporter = () =>
-  nodemailer.createTransport({
-    host:   process.env.BREVO_HOST,
-    port:   Number(process.env.BREVO_PORT) || 587,
-    secure: false,
-    auth: {
-      user: process.env.BREVO_USER,
-      pass: process.env.BREVO_PASS,
-    },
-  });
-
-// ─────────────────────────────────────────────
-// EMAIL SENDER — exponential backoff retry
-// ─────────────────────────────────────────────
-const sendMail = async (to, subject, html, attempt = 1) => {
-  const transporter = createTransporter();
-
-  try {
-    const attachments = [];
-    if (fs.existsSync(logoPath)) {
-      attachments.push({ filename: 'logo.png', path: logoPath, cid: 'logo' });
-    }
-
-    const info = await transporter.sendMail({
-      from:        `"Herbal Power" <${process.env.GMAIL_USER}>`,
-      to,
-      subject,
-      html,
-      attachments,
-    });
-
-    console.log(`✅ Email sent → ${to} | ${subject}`);
-    try { transporter.close(); } catch (_) {}
-    return info;
-
-  } catch (err) {
-    try { transporter.close(); } catch (_) {}
-    console.error(`❌ Email attempt ${attempt}/3 failed → ${to} | ${err.message}`);
-
-    if (attempt < 3) {
-      const delay = attempt * 2000;
-      console.log(`🔄 Retrying in ${delay / 1000}s...`);
-      await new Promise(r => setTimeout(r, delay));
-      return sendMail(to, subject, html, attempt + 1);
-    }
-
-    throw new Error(`Email failed after 3 attempts: ${err.message}`);
-  }
-};
+  order.orderNumber || String(order._id).toUpperCase().slice(-8);
 
 // ─── Items Table ───────────────────────────────────────────────────────────────
 const itemsHTML = (items = []) =>
@@ -148,7 +71,7 @@ const totalsHTML = (order) => `
           </td>
         </tr>
         <tr>
-          <td style="font-size:13px;color:#6a9a72;padding-bottom:16px;">Shipping</td>
+          <td style="font-size:13px;color:#6a9a72;padding-bottom:16px;">Delivery</td>
           <td style="font-size:13px;color:#6a9a72;text-align:right;padding-bottom:16px;">
             ${Number(order.deliveryFee || 0) > 0 ? fmt(order.deliveryFee) : 'Free'}
           </td>
@@ -166,7 +89,7 @@ const totalsHTML = (order) => `
     </td>
   </tr>`;
 
-// ─── Delivery Details Block ────────────────────────────────────────────────────
+// ─── Delivery Details ──────────────────────────────────────────────────────────
 const deliveryHTML = (order) => `
   <tr><td style="padding:0 48px 24px;">
     <div style="height:1px;background:#d0e5d8;"></div>
@@ -211,7 +134,7 @@ const deliveryHTML = (order) => `
     </td>
   </tr>`;
 
-// ─── Order ID Box ──────────────────────────────────────────────────────────────
+// ─── Order Box ─────────────────────────────────────────────────────────────────
 const orderBox = (order, badgeColor, badgeText) => `
   <tr>
     <td style="padding:0 48px 28px;">
@@ -242,7 +165,7 @@ const noteBox = (text, borderColor = '#3a8a52', bgColor = '#f0f7f2') => `
     </td>
   </tr>`;
 
-// ─── Base Email Shell ──────────────────────────────────────────────────────────
+// ─── Base Shell ────────────────────────────────────────────────────────────────
 const shell = (bodyContent) => `
 <!DOCTYPE html>
 <html lang="en">
@@ -258,39 +181,52 @@ const shell = (bodyContent) => `
       <table width="600" cellpadding="0" cellspacing="0" border="0"
              style="max-width:600px;width:100%;background:#ffffff;border-radius:2px;
                     box-shadow:0 2px 32px rgba(0,0,0,0.08);overflow:hidden;">
+
+        <!-- Top Green Bar -->
         <tr>
           <td style="height:3px;background:linear-gradient(90deg,#2e7d44,#5dba72,#2e7d44);"></td>
         </tr>
+
+        <!-- Logo -->
         <tr>
           <td style="padding:40px 48px 28px;text-align:center;background:#ffffff;">
-            <img src="cid:logo" alt="Herbal Power"
+            <img src="cid:herbal-logo" alt="Herbal Store"
                  style="max-width:160px;height:auto;display:block;margin:0 auto 18px;"/>
             <div style="width:36px;height:1px;background:#3a8a52;margin:0 auto;"></div>
           </td>
         </tr>
+
         ${bodyContent}
+
+        <!-- Footer -->
         <tr>
           <td style="background:#f0f7f2;padding:28px 48px;text-align:center;
                      border-top:1px solid #d0e5d8;">
             <div style="font-family:Georgia,serif;font-size:13px;letter-spacing:0.14em;
                         color:#1a2e1e;text-transform:uppercase;margin-bottom:5px;">
-              Herbal Power
+              Herbal Store
             </div>
-            <div style="font-size:11px;color:#6a9a72;letter-spacing:0.08em;margin-bottom:10px;">
-              Natural · Pure · Powerful
+            <div style="font-size:11px;color:#6a9a72;letter-spacing:0.08em;margin-bottom:6px;">
+              Pure · Natural · Genuine
             </div>
-            <a href="${process.env.DOMAIN || '#'}"
+            <div style="font-size:11px;color:#8ab890;margin-bottom:4px;">
+              📞 0331-7358159
+            </div>
+            <a href="${process.env.DOMAIN || 'https://herbalpowerstore.com'}"
                style="font-size:11px;color:#3a8a52;text-decoration:none;letter-spacing:0.06em;">
-              ${(process.env.DOMAIN || '').replace('https://', '')}
+              herbalpowerstore.com
             </a>
             <div style="margin-top:14px;font-size:10px;color:#8ab890;">
-              © ${new Date().getFullYear()} Herbal Power. All rights reserved.
+              © ${new Date().getFullYear()} Herbal Store. All rights reserved. Pakistan
             </div>
           </td>
         </tr>
+
+        <!-- Bottom Green Bar -->
         <tr>
           <td style="height:3px;background:linear-gradient(90deg,#2e7d44,#5dba72,#2e7d44);"></td>
         </tr>
+
       </table>
     </td></tr>
   </table>
@@ -300,16 +236,19 @@ const shell = (bodyContent) => `
 // ══════════════════════════════════════════════════════════════════════════════
 //  TEMPLATES
 // ══════════════════════════════════════════════════════════════════════════════
-const templates = {
 
-  pending: (order) => shell(`
+// 1. Order Received
+const pendingTemplate = (order) => {
+  const body = `
     <tr>
       <td style="padding:0 48px 28px;text-align:center;">
         <div style="font-size:36px;margin-bottom:12px;">🌿</div>
         <h1 style="margin:0 0 8px;font-family:Georgia,serif;font-size:24px;
-                   font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">Order Received</h1>
+                   font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">
+          Order Received!
+        </h1>
         <p style="margin:0;font-size:13px;color:#6a9a72;letter-spacing:0.1em;text-transform:uppercase;">
-          Thank you, ${order.customerName}
+          Shukriya, ${order.customerName}
         </p>
       </td>
     </tr>
@@ -327,89 +266,122 @@ const templates = {
     </tr>
     ${totalsHTML(order)}
     ${noteBox(
-      'We have received your order and it will be delivered to you soon. ' +
-      'You will be notified at every step. For any queries, reach us on WhatsApp or reply to this email.'
-    )}`),
+      'Aapka order successfully receive ho gaya hai. Hum jald hi aapko ' +
+      'deliver karenge. Har step pe aapko update kiya jayega. ' +
+      'Koi sawal ho tou WhatsApp ya email pe rabta karein.'
+    )}`;
+  return { subject: `Order Received — ${ordNo(order)} | Herbal Store`, html: shell(body) };
+};
 
-  confirmed: (order) => shell(`
+// 2. Confirmed
+const confirmedTemplate = (order) => {
+  const body = `
     <tr>
       <td style="padding:0 48px 28px;text-align:center;">
         <div style="font-size:36px;margin-bottom:12px;">✅</div>
         <h1 style="margin:0 0 8px;font-family:Georgia,serif;font-size:24px;
-                   font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">Order Confirmed</h1>
+                   font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">
+          Order Confirmed
+        </h1>
         <p style="margin:0;font-size:13px;color:#6a9a72;letter-spacing:0.1em;text-transform:uppercase;">
-          Great news, ${order.customerName}
+          Mubarak ho, ${order.customerName}!
         </p>
       </td>
     </tr>
     ${orderBox(order, '#2e7d44', 'Confirmed')}
     ${noteBox(
-      'Your order has been confirmed and is now being prepared with great care. ' +
-      'We will notify you as soon as it is on its way. Thank you for choosing Herbal Power.'
-    )}`),
+      'Aapka order confirm ho gaya hai aur ab tayyari shuru ho gayi hai. ' +
+      'Jaise hi dispatch hoga, aapko immediately update karenge. ' +
+      'Herbal Store choose karne ka shukriya!'
+    )}`;
+  return { subject: `Order Confirmed — ${ordNo(order)} | Herbal Store`, html: shell(body) };
+};
 
-  processing: (order) => shell(`
+// 3. Processing
+const processingTemplate = (order) => {
+  const body = `
     <tr>
       <td style="padding:0 48px 28px;text-align:center;">
         <div style="font-size:36px;margin-bottom:12px;">⚙️</div>
         <h1 style="margin:0 0 8px;font-family:Georgia,serif;font-size:24px;
-                   font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">Order Being Prepared</h1>
+                   font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">
+          Order Processing
+        </h1>
         <p style="margin:0;font-size:13px;color:#6a9a72;letter-spacing:0.1em;text-transform:uppercase;">
-          We are getting it ready, ${order.customerName}
+          Pack ho raha hai, ${order.customerName}
         </p>
       </td>
     </tr>
     ${orderBox(order, '#3a8a52', 'Processing')}
     ${noteBox(
-      'Your order is currently being processed and carefully packed. ' +
-      'This usually takes 1–2 business days. You will receive a shipping notification once dispatched.'
-    )}`),
+      'Aapka order carefully pack kiya ja raha hai. ' +
+      'Yeh process 1-2 business days mein complete ho jata hai. ' +
+      'Dispatch hone pe aapko shipping notification milegi.'
+    )}`;
+  return { subject: `Order Processing — ${ordNo(order)} | Herbal Store`, html: shell(body) };
+};
 
-  shipped: (order) => shell(`
+// 4. Shipped
+const shippedTemplate = (order) => {
+  const body = `
     <tr>
       <td style="padding:0 48px 28px;text-align:center;">
         <div style="font-size:36px;margin-bottom:12px;">🚚</div>
         <h1 style="margin:0 0 8px;font-family:Georgia,serif;font-size:24px;
-                   font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">Your Order Is On Its Way</h1>
+                   font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">
+          Order Dispatched!
+        </h1>
         <p style="margin:0;font-size:13px;color:#6a9a72;letter-spacing:0.1em;text-transform:uppercase;">
-          Dispatched with care, ${order.customerName}
+          Raste mein hai, ${order.customerName}
         </p>
       </td>
     </tr>
     ${orderBox(order, '#5dba72', 'Shipped')}
     ${noteBox(
-      'Your order has been dispatched and is on its way to you. ' +
-      'Please expect delivery within <strong>2–5 business days</strong>. ' +
-      'Keep your phone accessible — the courier may call before arrival.'
-    )}`),
+      'Aapka order dispatch ho gaya hai aur aapki taraf aa raha hai. ' +
+      '<strong>2-5 business days</strong> mein deliver ho jayega. ' +
+      'Phone accessible rakhein — courier call kar sakta hai.'
+    )}`;
+  return { subject: `Order Dispatched — ${ordNo(order)} | Herbal Store`, html: shell(body) };
+};
 
-  delivered: (order) => shell(`
+// 5. Delivered
+const deliveredTemplate = (order) => {
+  const body = `
     <tr>
       <td style="padding:0 48px 28px;text-align:center;">
         <div style="font-size:36px;margin-bottom:12px;">🎁</div>
         <h1 style="margin:0 0 8px;font-family:Georgia,serif;font-size:24px;
-                   font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">Delivered with Care</h1>
+                   font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">
+          Delivered!
+        </h1>
         <p style="margin:0;font-size:13px;color:#6a9a72;letter-spacing:0.1em;text-transform:uppercase;">
-          We hope you love it, ${order.customerName}
+          Pasand aaye, ${order.customerName}!
         </p>
       </td>
     </tr>
     ${orderBox(order, '#1a2e1e', 'Delivered')}
     ${noteBox(
       '<span style="font-family:Georgia,serif;font-size:15px;color:#1a2e1e;display:block;margin-bottom:8px;">' +
-      'Thank you for choosing Herbal Power.</span>' +
-      'Your order has been successfully delivered. We hope it exceeded your expectations. ' +
-      'For any concerns, reply to this email or reach us on WhatsApp — we are always here for you.'
-    )}`),
+      'Herbal Store choose karne ka dil se shukriya!</span>' +
+      'Aapka order successfully deliver ho gaya hai. Umeed hai aap bilkul satisfied hain. ' +
+      'Koi concern ho tou reply karein ya WhatsApp pe rabta karein — hum hamesha available hain.'
+    )}`;
+  return { subject: `Delivered — ${ordNo(order)} | Herbal Store`, html: shell(body) };
+};
 
-  cancelled: (order) => shell(`
+// 6. Cancelled
+const cancelledTemplate = (order) => {
+  const body = `
     <tr>
       <td style="padding:0 48px 28px;text-align:center;">
         <div style="font-size:36px;margin-bottom:12px;">✕</div>
         <h1 style="margin:0 0 8px;font-family:Georgia,serif;font-size:24px;
-                   font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">Order Cancelled</h1>
+                   font-weight:400;color:#1a2e1e;letter-spacing:0.06em;">
+          Order Cancelled
+        </h1>
         <p style="margin:0;font-size:13px;color:#6a9a72;letter-spacing:0.1em;text-transform:uppercase;">
-          We are sorry, ${order.customerName}
+          Maafi chahte hain, ${order.customerName}
         </p>
       </td>
     </tr>
@@ -431,30 +403,77 @@ const templates = {
       </td>
     </tr>
     ${noteBox(
-      `Your order <strong>${ordNo(order)}</strong> totalling <strong>${fmt(order.total)}</strong> has been cancelled. ` +
-      'If this was a mistake or you have any questions, please reach out on WhatsApp or reply to this email.',
+      `Aapka order <strong>${ordNo(order)}</strong> جس کی مالیت <strong>${fmt(order.total)}</strong> thi, cancel ho gaya hai. ` +
+      'Agar yeh ghalti se hua hai ya koi sawal hai tou WhatsApp ya email pe rabta karein.',
       '#c0392b', '#fdf5f5'
     )}
     ${noteBox(
-      `We hope to serve you again. Visit us at ` +
-      `<a href="${process.env.DOMAIN || '#'}" style="color:#3a8a52;text-decoration:none;">` +
-      `${(process.env.DOMAIN || '').replace('https://', '')}</a>`
-    )}`),
+      'Dobara order karne ke liye visit karein: ' +
+      `<a href="${process.env.DOMAIN || 'https://herbalpowerstore.com'}" style="color:#3a8a52;text-decoration:none;">herbalpowerstore.com</a>`
+    )}`;
+  return { subject: `Order Cancelled — ${ordNo(order)} | Herbal Store`, html: shell(body) };
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  SUBJECTS
+//  CORE SEND
 // ══════════════════════════════════════════════════════════════════════════════
+const sendMail = async (to, subject, html, attempt = 1) => {
+  try {
+    const attachments = [];
+    if (fs.existsSync(logoPath)) {
+      attachments.push({
+        filename: 'logo.png',
+        path:     logoPath,
+        cid:      'herbal-logo',
+      });
+    } else {
+      console.warn('⚠️ logo.png not found — sending without logo');
+    }
+
+    await transporter.sendMail({
+      from:        `"Herbal Store" <${process.env.GMAIL_USER}>`,
+      to,
+      subject,
+      html,
+      attachments,
+    });
+
+    console.log(`✅ Email sent → ${to} | ${subject}`);
+
+  } catch (err) {
+    console.error(`❌ Email attempt ${attempt}/3 failed → ${to} | ${err.message}`);
+
+    if (attempt < 3) {
+      const delay = attempt * 2000;
+      console.log(`🔄 Retrying in ${delay / 1000}s...`);
+      await new Promise(r => setTimeout(r, delay));
+      return sendMail(to, subject, html, attempt + 1);
+    }
+
+    throw new Error(`Email failed after 3 attempts: ${err.message}`);
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  EXPORTS — orders.js route ke sath compatible
+//  templates aur subjects same format mein hain
+// ══════════════════════════════════════════════════════════════════════════════
+const templates = {
+  pending:    pendingTemplate,
+  confirmed:  confirmedTemplate,
+  processing: processingTemplate,
+  shipped:    shippedTemplate,
+  delivered:  deliveredTemplate,
+  cancelled:  cancelledTemplate,
+};
+
 const subjects = {
-  pending:    (num) => `Order Received — ${num} | Herbal Power`,
-  confirmed:  (num) => `Order Confirmed — ${num} | Herbal Power`,
-  processing: (num) => `Order Processing — ${num} | Herbal Power`,
-  shipped:    (num) => `Your Order Is On Its Way — ${num} | Herbal Power`,
-  delivered:  (num) => `Delivered — ${num} | Herbal Power`,
-  cancelled:  (num) => `Order Cancelled — ${num} | Herbal Power`,
+  pending:    (num) => `Order Received — ${num} | Herbal Store`,
+  confirmed:  (num) => `Order Confirmed — ${num} | Herbal Store`,
+  processing: (num) => `Order Processing — ${num} | Herbal Store`,
+  shipped:    (num) => `Order Dispatched — ${num} | Herbal Store`,
+  delivered:  (num) => `Delivered — ${num} | Herbal Store`,
+  cancelled:  (num) => `Order Cancelled — ${num} | Herbal Store`,
 };
 
-// ══════════════════════════════════════════════════════════════════════════════
-//  EXPORTS
-// ══════════════════════════════════════════════════════════════════════════════
 module.exports = { sendMail, templates, subjects };
