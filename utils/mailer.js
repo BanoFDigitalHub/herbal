@@ -37,11 +37,12 @@ const ordNo = (order) =>
 // PEHLE call hota hai. dns.resolve4() se directly
 // IPv4 address return karte hain — IPv6 ka chance
 // hi nahi milta Render pe.
+// ─────────────────────────────────────────────// ─────────────────────────────────────────────
+// ⭐ ROOT FIX: IPv4-only DNS lookup
 // ─────────────────────────────────────────────
 function ipv4Lookup(hostname, _options, callback) {
   dns.resolve4(hostname, (err, addresses) => {
     if (err || !addresses || addresses.length === 0) {
-      // Fallback: Node ka default lookup with family:4 hint
       return dns.lookup(hostname, { family: 4 }, callback);
     }
     callback(null, addresses[0], 4);
@@ -49,18 +50,16 @@ function ipv4Lookup(hostname, _options, callback) {
 }
 
 // ─────────────────────────────────────────────
-// TRANSPORTER FACTORY
-// pool: false  — har send pe fresh connection
-// lookup: ipv4Lookup — IPv6 kabhi use nahi hoga
+// TRANSPORTER — Port 587, family:4, IPv4 lookup
 // ─────────────────────────────────────────────
 const createTransporter = () =>
   nodemailer.createTransport({
     host:   'smtp.gmail.com',
-    port:   465,
-    secure: true,
+    port:   587,          // ✅ 465 → 587 (Render pe 465 block hai)
+    secure: false,        // ✅ 587 ke liye false
+    family: 4,            // ✅ Extra IPv4 force
 
-    // ✅ THE FIX — yeh ek line sab kuch solve karti hai
-    lookup: ipv4Lookup,
+    lookup: ipv4Lookup,   // ✅ DNS level pe IPv4 only
 
     auth: {
       user: process.env.GMAIL_USER,
@@ -69,12 +68,13 @@ const createTransporter = () =>
 
     pool: false,
 
-    connectionTimeout: 15000,
-    greetingTimeout:   10000,
-    socketTimeout:     15000,
+    connectionTimeout: 20000,
+    greetingTimeout:   15000,
+    socketTimeout:     20000,
 
     tls: {
       rejectUnauthorized: false,
+      servername: 'smtp.gmail.com',  // ✅ TLS SNI fix
     },
   });
 
