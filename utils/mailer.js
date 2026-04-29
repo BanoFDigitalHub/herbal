@@ -54,27 +54,12 @@ function ipv4Lookup(hostname, _options, callback) {
 // ─────────────────────────────────────────────
 const createTransporter = () =>
   nodemailer.createTransport({
-    host:   'smtp.gmail.com',
-    port:   587,          // ✅ 465 → 587 (Render pe 465 block hai)
-    secure: false,        // ✅ 587 ke liye false
-    family: 4,            // ✅ Extra IPv4 force
-
-    lookup: ipv4Lookup,   // ✅ DNS level pe IPv4 only
-
+    host:   process.env.BREVO_HOST,
+    port:   Number(process.env.BREVO_PORT) || 587,
+    secure: false,
     auth: {
-      user: process.env.GMAIL_USER,
-      pass: process.env.GMAIL_APP_PASSWORD,
-    },
-
-    pool: false,
-
-    connectionTimeout: 20000,
-    greetingTimeout:   15000,
-    socketTimeout:     20000,
-
-    tls: {
-      rejectUnauthorized: false,
-      servername: 'smtp.gmail.com',  // ✅ TLS SNI fix
+      user: process.env.BREVO_USER,
+      pass: process.env.BREVO_PASS,
     },
   });
 
